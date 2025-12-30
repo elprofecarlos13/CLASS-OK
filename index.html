@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>CLASS-OK</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#ffffff">
+
+
+
+  <!-- Librería Excel -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+  <style>
+    body { font-family: Arial, sans-serif; }
+    h1 { text-align: center; }
+    table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
+    input[type="text"], input[type="date"] { width: 200px; margin: 3px; }
+    input[type="number"] { width: 70px; }
+    button { cursor: pointer; margin: 4px; }
+    hr { margin: 15px 0; }
+    .info-box { background: #f5f5f5; padding: 10px; border-radius: 5px; }
+  </style>
+</head>
+
+<body>
+
+<h1>📘 CLASS-OK</h1>
+<p style="text-align:center; font-size:12px; margin-top:-10px;">
+  by el Profe Carlos Simancas<br>
+  <span id="versionApp"></span>
+</p>
+
+
+
+<!-- INFO GENERAL -->
+<div class="info-box">
+  <h3>Información académica</h3>
+  <input type="text" id="docente" placeholder="Nombre del docente">
+  <input type="text" id="colegio" placeholder="Nombre del colegio">
+  <input type="text" id="curso" placeholder="Nombre del curso">
+  <input type="date" id="fecha">
+</div>
+
+<hr>
+
+<!-- CONFIGURACIÓN -->
+<label>Número de notas:</label>
+<input type="number" id="numNotas" min="1" value="1">
+<button onclick="configurarNotas()">Aplicar</button>
+
+<hr>
+
+<!-- REGISTRO MANUAL -->
+<h3>➕ Agregar estudiante</h3>
+<input type="text" id="nombre" placeholder="Nombre">
+<input type="text" id="apellido" placeholder="Apellido">
+<button onclick="agregarManual()">Agregar</button>
+
+<hr>
+
+<!-- IMPORTAR EXCEL -->
+<h3>📂 Importar estudiantes desde Excel</h3>
+<input type="file" id="excelFile" accept=".xlsx,.xls">
+<button onclick="importarExcel()">Importar</button>
+
+<hr>
+
+<!-- TABLA -->
+<table>
+  <thead id="thead"></thead>
+  <tbody id="tbody"></tbody>
+</table>
+
+<hr>
+
+<!-- ACCIONES -->
+<button onclick="guardarTodo()">💾 Guardar en local</button>
+<button onclick="exportarExcel()">📊 Exportar a Excel</button>
+
+<script>
+/* ================== ESTADO GLOBAL ================== */
+let estudiantes = [];
+let totalNotas = 1;
+
+/* ================== INFO GENERAL ================== */
+function getInfo() {
+  return {
+    docente: docente.value,
+    colegio: colegio.value,
+    curso: curso.value,
+    fecha: fecha.value
+  };
+}
+
+/* ================== GUARDAR / CARGAR ================== */
+function guardarTodo() {
+  localStorage.setItem("classok_estudiantes", JSON.stringify(estudiantes));
+  localStorage.setItem("classok_totalNotas", totalNotas);
+  localStorage.setItem("classok_info", JSON.stringify(getInfo()));
+}
+
+function cargarTodo() {
+  estudiantes = JSON.parse(localStorage.getItem("classok_estudiantes")) || [];
+  totalNotas = parseInt(localStorage.getItem("classok_totalNotas")) || 1;
+  const info = JSON.parse(localStorage.getItem("classok_info")) || {};
+
+  numNotas.value = totalNotas;
+  docente.value = info.docente || "";
+  colegio.value = info.colegio || "";
+  curso.value = info.curso || "";
+  fecha.value = info.fecha || "";
+
+  renderTabla();
+}
+
+/* ================== CONFIGURAR NOTAS ================== */
+function configurarNotas() {
+  totalNotas = parseInt(numNotas.value);
+  estudiantes.forEach(e => {
+    while (e.notas.length < totalNotas) e.notas.push("");
+    e.notas.length = totalNotas;
+  });
+  guardarTodo();
+  renderTabla();
+}
+
+/* ================== AGREGAR MANUAL ================== */
+function agregarManual() {
+  if (!nombre.value || !apellido.value) {
+    alert("Completa los campos");
+    return;
+  }
+
+  estudiantes.push({
+    nombre: nombre.value.trim(),
+    apellido: apellido.value.trim(),
+    asistencia: false,
+    notas: Array(totalNotas).fill("")
+  });
+
+  nombre.value = "";
+  apellido.value = "";
+  guardarTodo();
+  renderTabla();
+}
+
+/* ================== IMPORTAR EXCEL ================== */
+function importarExcel() {
+  const file = excelFile.files[0];
+  if (!file) return alert("Selecciona un archivo Excel");
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    const workbook = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    rows.slice(1).forEach(row => {
+      if (!row[0] || !row[1]) return;
+      estudiantes.push({
+        nombre: row[0].toString().trim(),
+        apellido: row[1].toString().trim(),
+        asistencia: false,
+        notas: Array(totalNotas).fill("")
+      });
+    });
+
+    excelFile.value = "";
+    guardarTodo();
+    renderTabla();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ================== PROMEDIO ================== */
+function calcularPromedio(notas) {
+  const validas = notas.filter(n => n !== "" && !isNaN(n));
+  if (validas.length === 0) return "";
+  const suma = validas.reduce((a, b) => a + b, 0);
+  return (suma / validas.length).toFixed(2);
+}
+
+/* ================== TABLA ================== */
+function renderTabla() {
+  let head = "<tr><th>#</th><th>Nombre</th><th>Apellido</th><th>Asistencia</th>";
+  for (let i = 0; i < totalNotas; i++) head += `<th>Nota ${i + 1}</th>`;
+  head += "<th>Promedio</th></tr>";
+  thead.innerHTML = head;
+
+  tbody.innerHTML = "";
+  estudiantes.forEach((e, i) => {
+    let row = `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${e.nombre}</td>
+        <td>${e.apellido}</td>
+        <td>
+          <button onclick="toggleAsistencia(${i})">
+            ${e.asistencia ? "✔️" : "❌"}
+          </button>
+        </td>
+    `;
+
+    e.notas.forEach((n, j) => {
+      row += `
+        <td>
+          <input type="number" min="1" max="5" step="0.1"
+            value="${n !== "" ? n : ""}"
+            onchange="actualizarNota(${i}, ${j}, this.value)">
+        </td>`;
+    });
+
+    row += `<td><strong>${calcularPromedio(e.notas)}</strong></td>`;
+    row += "</tr>";
+    tbody.innerHTML += row;
+  });
+}
+
+/* ================== ACCIONES ================== */
+function toggleAsistencia(i) {
+  estudiantes[i].asistencia = !estudiantes[i].asistencia;
+  guardarTodo();
+  renderTabla();
+}
+
+function actualizarNota(e, n, v) {
+  estudiantes[e].notas[n] = v === "" ? "" : parseFloat(v);
+  guardarTodo();
+  renderTabla();
+}
+
+/* ================== EXPORTAR EXCEL ================== */
+function exportarExcel() {
+  const info = getInfo();
+
+  const encabezado = [
+    ["CLASS-OK"],
+    [`Docente: ${info.docente}`],
+    [`Colegio: ${info.colegio}`],
+    [`Curso: ${info.curso}`],
+    [`Fecha: ${info.fecha}`],
+    []
+  ];
+
+  const columnas = ["Nombre", "Apellido", "Asistencia"];
+  for (let i = 0; i < totalNotas; i++) columnas.push(`Nota ${i + 1}`);
+  columnas.push("Promedio");
+
+  const filas = estudiantes.map(e => [
+    e.nombre,
+    e.apellido,
+    e.asistencia ? "Presente" : "Ausente",
+    ...e.notas,
+    calcularPromedio(e.notas)
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet([...encabezado, columnas, ...filas]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "CLASS-OK");
+
+  XLSX.writeFile(wb, "CLASS-OK.xlsx");
+}
+
+window.onload = cargarTodo;
+</script>
+<script>
+  const year = new Date().getFullYear();
+  document.getElementById("versionApp").innerText =
+    `v1.0 • © ${year}`;
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js");
+}
+</script>
+
+</body>
+</html>
